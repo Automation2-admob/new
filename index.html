@@ -72,13 +72,13 @@
         <!-- Dashboard -->
         <div class="mt-20">
             <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-semibold">📊 Shared Generation Activity</h2>
+                <h2 class="text-2xl font-semibold">📊 Shared Generation Activity (GitHub JSON)</h2>
                 <button onclick="refreshData()" class="text-blue-400 hover:text-blue-300 text-sm">🔄 Refresh</button>
             </div>
 
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
                 <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
-                    <p class="text-zinc-400 text-sm">Total ZIPs</p>
+                    <p class="text-zinc-400 text-sm">Total ZIPs Created</p>
                     <p id="total-count" class="text-5xl font-semibold text-emerald-400 mt-2">0</p>
                 </div>
                 <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
@@ -98,63 +98,90 @@
     </div>
 
     <script>
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx1hSqRVV9RrYP0XG-PizvBcR3udgoMWpj-yKAcxwFRitzYMsVZSDDq9LgAAHK8G49W/exec";
+        // ==================== GITHUB CONFIG ====================
+        const GITHUB_OWNER = "YOUR_USERNAME";           // ← Change this
+        const GITHUB_REPO  = "YOUR_REPO_NAME";          // ← Change this
+        const GITHUB_TOKEN = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"; // ← Paste your token here
+        const FILE_PATH    = "zip-history.json";
 
         let selectedFiles = [];
         let generationHistory = [];
         let dailyChart = null;
 
-        // ==================== LOGGING WITH NO-CORS ====================
-        async function logToSheets(zipName, originalName, fileSize) {
+        // ==================== GITHUB FUNCTIONS ====================
+        async function getCurrentHistory() {
+            const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
             try {
-                const payload = {
-                    zipName,
-                    originalImage: originalName,
-                    sizeKB: Math.round(fileSize / 1024),
-                    dateOnly: new Date().toISOString().split('T')[0]
-                };
-
-                await fetch(WEB_APP_URL, {
-                    method: "POST",
-                    mode: "no-cors",           // ← This bypasses CORS error
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
+                const res = await fetch(url, {
+                    headers: { Authorization: `token ${GITHUB_TOKEN}` }
                 });
-
-                console.log("✅ Sent to Google Sheets (no-cors):", zipName);
+                if (res.status === 404) return { history: [], sha: null };
+                const data = await res.json();
+                const content = JSON.parse(atob(data.content));
+                return { history: content.history || [], sha: data.sha };
             } catch (e) {
-                console.error("❌ Log failed:", e);
+                console.error("GitHub GET error", e);
+                return { history: [], sha: null };
             }
         }
 
-        async function loadFromSheets() {
-            try {
-                const res = await fetch(WEB_APP_URL + "?t=" + Date.now());
-                const data = await res.json();
-                generationHistory = data || [];
-                renderSummary();
-                renderDailyChart();
-                console.log(`Loaded ${generationHistory.length} records`);
-            } catch (e) {
-                console.error("❌ Load failed:", e);
-            }
+        async function updateHistory(newEntry) {
+            const { history, sha } = await getCurrentHistory();
+            history.unshift(newEntry);
+            if (history.length > 500) history.pop();
+
+            const newContent = btoa(JSON.stringify({ history }, null, 2));
+
+            const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
+            await fetch(url, {
+                method: "PUT",
+                headers: {
+                    Authorization: `token ${GITHUB_TOKEN}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: `Add ZIP: ${newEntry.zipName}`,
+                    content: newContent,
+                    sha: sha
+                })
+            });
+        }
+
+        async function logToGitHub(zipName, originalName, fileSize) {
+            const entry = {
+                zipName,
+                originalImage: originalName,
+                sizeKB: Math.round(fileSize / 1024),
+                date: new Date().toISOString(),
+                dateOnly: new Date().toISOString().split('T')[0]
+            };
+            await updateHistory(entry);
+            console.log("✅ Saved to GitHub:", zipName);
+        }
+
+        async function loadFromGitHub() {
+            const { history } = await getCurrentHistory();
+            generationHistory = history;
+            renderSummary();
+            renderDailyChart();
         }
 
         function renderSummary() {
             document.getElementById('total-count').textContent = generationHistory.length;
-            const unique = new Set(generationHistory.map(h => h.dateOnly)).size;
-            document.getElementById('unique-days').textContent = unique;
+            const uniqueDays = new Set(generationHistory.map(h => h.dateOnly)).size;
+            document.getElementById('unique-days').textContent = uniqueDays;
 
             if (generationHistory.length > 0) {
-                const last = new Date(generationHistory[0].timestamp);
-                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
+                const last = new Date(generationHistory[0].date);
+                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
             }
         }
 
         function renderDailyChart() {
             const counts = {};
-            generationHistory.forEach(item => counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1);
-
+            generationHistory.forEach(item => {
+                counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1;
+            });
             const sortedDates = Object.keys(counts).sort().reverse();
             const dataPoints = sortedDates.map(d => counts[d]);
 
@@ -164,7 +191,12 @@
                 type: 'bar',
                 data: {
                     labels: sortedDates,
-                    datasets: [{ label: 'ZIPs Created', data: dataPoints, backgroundColor: '#10b981', borderRadius: 6 }]
+                    datasets: [{
+                        label: 'ZIP Files Created',
+                        data: dataPoints,
+                        backgroundColor: '#10b981',
+                        borderRadius: 6
+                    }]
                 },
                 options: {
                     responsive: true,
@@ -174,11 +206,9 @@
             });
         }
 
-        function refreshData() { loadFromSheets(); }
+        function refreshData() { loadFromGitHub(); }
 
-        // ==================== Rest of your functions (same) ====================
-        // ... (I kept them short to save space - copy from previous full version if needed)
-
+        // ==================== ZIP CREATION (unchanged except logging) ====================
         async function createAndDownloadZIP(file) {
             const img = new Image();
             const objectURL = URL.createObjectURL(file);
@@ -193,8 +223,10 @@
             const zipBlob = await zip.generateAsync({ type: 'blob' });
             const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
 
-            await logToSheets(zipName, file.name, file.size);
+            // Save to GitHub
+            await logToGitHub(zipName, file.name, file.size);
 
+            // Download
             const link = document.createElement('a');
             link.href = URL.createObjectURL(zipBlob);
             link.download = zipName;
@@ -208,17 +240,25 @@
             generateBtn.disabled = true;
 
             for (let file of selectedFiles) {
-                statusText.textContent = `Creating ${file.name}`;
+                statusText.textContent = `📦 Creating ${file.name}`;
                 await createAndDownloadZIP(file);
             }
 
-            statusText.innerHTML = `✅ ZIPs created! Check Google Sheet after 10 seconds.`;
-            setTimeout(loadFromSheets, 3000);   // Refresh after delay
+            statusText.innerHTML = `✅ All ZIPs created and saved to GitHub!`;
+            await loadFromGitHub();
+
+            setTimeout(() => {
+                statusText.textContent = '';
+                generateBtn.disabled = false;
+            }, 4000);
         }
 
+        // Rest of your file handling functions (same as before)
+        // ... (selectFiles, handleNewFiles, renderPreview, etc.) ...
+
         window.onload = () => {
-            loadFromSheets();
-            console.log('%c✅ Ready - Watch Console (F12)', 'color:#10b981');
+            loadFromGitHub();
+            console.log('%c✅ GitHub JSON Tracking Active!', 'color:#10b981; font-weight:600');
         };
     </script>
 </body>
