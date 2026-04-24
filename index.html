@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convert Image to HTML ad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        .drop-zone { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .preview-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-zinc-950 to-black text-white min-h-screen pb-12">
+
+    <div class="max-w-5xl mx-auto px-6 pt-10">
+        <!-- Header -->
+        <div class="flex items-center justify-center gap-x-4 mb-6">
+            <span class="text-6xl">🖼️</span>
+            <h1 class="text-5xl font-semibold tracking-[-1px]">Convert Image to HTML ad</h1>
+            <span class="text-6xl">📄</span>
+        </div>
+        <p class="text-center text-zinc-400 text-lg max-w-lg mx-auto">
+            Upload single image • Multiple images • Or entire folder<br>
+            Get Google Ads-ready ZIPs
+        </p>
+
+        <!-- Upload Area -->
+        <div id="drop-zone" class="drop-zone mt-10 border-4 border-dashed border-zinc-700 hover:border-blue-500 rounded-3xl p-14 text-center bg-zinc-900/50 cursor-pointer">
+            <div class="mx-auto mb-8 text-8xl">📤</div>
+            <p class="text-3xl font-semibold mb-3">Drop images or folder here</p>
+            <p class="text-zinc-400 text-xl mb-8">Works for single, multiple, or folder selection</p>
+          
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <button onclick="selectFiles(false)" class="px-8 py-5 bg-blue-600 hover:bg-blue-500 rounded-3xl text-xl font-semibold inline-flex items-center gap-x-3 shadow-2xl">
+                    📸 Select Images
+                </button>
+                <button onclick="selectFiles(true)" class="px-8 py-5 bg-purple-600 hover:bg-purple-500 rounded-3xl text-xl font-semibold inline-flex items-center gap-x-3 shadow-2xl">
+                    📁 Select Folder
+                </button>
+            </div>
+            <p class="text-xs text-zinc-500 mt-8">Supported: JPG, JPEG, PNG, GIF, WebP</p>
+        </div>
+
+        <!-- Hidden Inputs -->
+        <input type="file" id="file-input" class="hidden" multiple accept="image/*">
+        <input type="file" id="folder-input" class="hidden" webkitdirectory directory>
+
+        <!-- Preview -->
+        <div id="preview-section" class="hidden mt-16">
+            <div class="flex items-baseline justify-between mb-6">
+                <div class="flex items-center gap-x-3">
+                    <h2 class="text-2xl font-semibold">Selected images</h2>
+                    <span id="count-badge" class="bg-blue-600 text-white text-sm px-3 py-1 rounded-3xl font-mono"></span>
+                </div>
+                <button onclick="clearAllFiles()" class="flex items-center gap-x-2 text-red-400 hover:text-red-300 text-sm font-medium">🗑️ Clear all</button>
+            </div>
+            <div id="preview-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6"></div>
+        </div>
+
+        <!-- Generate Button -->
+        <button onclick="generateHTMLAds()" id="generate-btn" disabled
+                class="mt-14 w-full py-8 rounded-3xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-3xl font-semibold flex items-center justify-center gap-x-4 shadow-2xl transition-all">
+            🚀 Generate HTML AD for Google Ads <span class="text-4xl">📥</span>
+        </button>
+        <p id="status-text" class="text-center text-zinc-400 mt-6 min-h-[1.5rem]"></p>
+
+        <!-- Shared Dashboard -->
+        <div class="mt-20">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-semibold">📊 Shared Generation Activity (Google Sheets)</h2>
+                <button onclick="refreshData()" class="text-blue-400 hover:text-blue-300 text-sm">🔄 Refresh Data</button>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+                    <p class="text-zinc-400 text-sm">Total ZIPs Created</p>
+                    <p id="total-count" class="text-5xl font-semibold text-emerald-400 mt-2">0</p>
+                </div>
+                <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+                    <p class="text-zinc-400 text-sm">Active Days</p>
+                    <p id="unique-days" class="text-5xl font-semibold text-emerald-400 mt-2">0</p>
+                </div>
+                <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+                    <p class="text-zinc-400 text-sm">Last Activity</p>
+                    <p id="last-date" class="text-3xl font-semibold text-emerald-400 mt-2">-</p>
+                </div>
+            </div>
+
+            <div class="bg-zinc-900 rounded-3xl p-6 border border-zinc-800 h-80">
+                <canvas id="dailyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== YOUR GOOGLE SHEETS URL ====================
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx1hSqRVV9RrYP0XG-PizvBcR3udgoMWpj-yKAcxwFRitzYMsVZSDDq9LgAAHK8G49W/exec";
+
+        let selectedFiles = [];
+        let generationHistory = [];
+        let dailyChart = null;
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const folderInput = document.getElementById('folder-input');
+        const previewSection = document.getElementById('preview-section');
+        const previewGrid = document.getElementById('preview-grid');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusText = document.getElementById('status-text');
+        const countBadge = document.getElementById('count-badge');
+
+        // ==================== GOOGLE SHEETS FUNCTIONS ====================
+        async function logToSheets(zipName, originalName, fileSize) {
+            try {
+                await fetch(WEB_APP_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        zipName: zipName,
+                        originalImage: originalName,
+                        sizeKB: Math.round(fileSize / 1024),
+                        dateOnly: new Date().toISOString().split('T')[0]
+                    })
+                });
+                console.log("✅ Logged to Google Sheets:", zipName);
+            } catch (e) {
+                console.error("❌ Log failed:", e);
+            }
+        }
+
+        async function loadFromSheets() {
+            try {
+                const res = await fetch(WEB_APP_URL + "?t=" + Date.now());
+                const data = await res.json();
+                generationHistory = data || [];
+                
+                renderSummary();
+                renderDailyChart();
+                console.log(`Loaded ${generationHistory.length} records`);
+            } catch (e) {
+                console.error("❌ Failed to load data:", e);
+            }
+        }
+
+        function renderSummary() {
+            document.getElementById('total-count').textContent = generationHistory.length;
+            const unique = new Set(generationHistory.map(h => h.dateOnly)).size;
+            document.getElementById('unique-days').textContent = unique;
+
+            if (generationHistory.length > 0) {
+                const last = new Date(generationHistory[0].timestamp);
+                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
+            }
+        }
+
+        function renderDailyChart() {
+            const counts = {};
+            generationHistory.forEach(item => {
+                counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1;
+            });
+
+            const sortedDates = Object.keys(counts).sort().reverse();
+            const dataPoints = sortedDates.map(d => counts[d]);
+
+            if (dailyChart) dailyChart.destroy();
+
+            dailyChart = new Chart(document.getElementById('dailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: 'ZIP Files Created',
+                        data: dataPoints,
+                        backgroundColor: '#10b981',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa', font: {size: 16}} },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }} }
+                }
+            });
+        }
+
+        function refreshData() {
+            loadFromSheets();
+        }
+
+        // ==================== FILE & ZIP FUNCTIONS (same as before) ====================
+        function isImageFile(file) {
+            if (file.type.startsWith('image/')) return true;
+            const ext = file.name.toLowerCase().split('.').pop();
+            return ['jpg','jpeg','png','gif','webp'].includes(ext);
+        }
+
+        function selectFiles(isFolder) {
+            isFolder ? folderInput.click() : fileInput.click();
+        }
+
+        fileInput.addEventListener('change', () => handleNewFiles(fileInput.files));
+        folderInput.addEventListener('change', () => handleNewFiles(folderInput.files));
+
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('!border-blue-500', 'bg-blue-900/10'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10');
+            handleNewFiles(e.dataTransfer.files);
+        });
+
+        function handleNewFiles(fileList) {
+            const images = Array.from(fileList).filter(isImageFile);
+            if (images.length === 0) return alert('No valid images found');
+
+            const existing = new Set(selectedFiles.map(f => f.name));
+            const newFiles = images.filter(f => !existing.has(f.name));
+
+            selectedFiles = [...selectedFiles, ...newFiles];
+            renderPreview();
+        }
+
+        function renderPreview() {
+            previewSection.classList.remove('hidden');
+            previewGrid.innerHTML = '';
+            countBadge.textContent = `${selectedFiles.length} image${selectedFiles.length !== 1 ? 's' : ''}`;
+
+            selectedFiles.forEach((file, i) => {
+                const url = URL.createObjectURL(file);
+                const card = `
+                <div class="preview-card bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-700 hover:border-zinc-400 group relative">
+                    <div class="aspect-square bg-black flex items-center justify-center p-3">
+                        <img src="${url}" class="max-h-full max-w-full object-contain rounded-2xl">
+                    </div>
+                    <div class="px-4 py-3 text-sm truncate">${file.name}</div>
+                    <button onclick="removeFile(${i});event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 w-7 h-7 rounded-2xl text-white opacity-0 group-hover:opacity-100">✕</button>
+                </div>`;
+                previewGrid.insertAdjacentHTML('beforeend', card);
+            });
+            generateBtn.disabled = false;
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            renderPreview();
+            if (selectedFiles.length === 0) previewSection.classList.add('hidden');
+        }
+
+        function clearAllFiles() {
+            selectedFiles = [];
+            previewSection.classList.add('hidden');
+            generateBtn.disabled = true;
+        }
+
+        function createAdHTML(imageFilename, w, h) {
+            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="ad.size" content="width=${w},height=${h}"><title>Ad</title><script src="https://tpc.googlesyndication.com/pagead/gadgets/html5/api/exitapi.js"><\/script><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000}img{width:100%;height:100%;object-fit:contain}</style></head><body><img src="${imageFilename}"><div style="position:absolute;inset:0;cursor:pointer" onclick="ExitApi.exit()"></div></body></html>`;
+        }
+
+        async function createAndDownloadZIP(file) {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            await new Promise(r => { img.onload = r; img.src = url; });
+
+            const html = createAdHTML(file.name, img.naturalWidth, img.naturalHeight);
+            const zip = new JSZip();
+            zip.file(file.name, file);
+            zip.file("index.html", html);
+
+            const blob = await zip.generateAsync({type:"blob"});
+            const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
+
+            // Log to Google Sheets
+            await logToSheets(zipName, file.name, file.size);
+
+            // Download
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = zipName;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function generateHTMLAds() {
+            if (selectedFiles.length === 0) return;
+            statusText.textContent = '🔄 Processing...';
+            generateBtn.disabled = true;
+
+            for (let file of selectedFiles) {
+                statusText.textContent = `📦 Creating ZIP for ${file.name}`;
+                await createAndDownloadZIP(file);
+            }
+
+            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created & logged!`;
+            await loadFromSheets();   // Refresh shared data
+
+            setTimeout(() => {
+                statusText.textContent = '';
+                generateBtn.disabled = false;
+            }, 4000);
+        }
+
+        // Init
+        window.onload = () => {
+            loadFromSheets();
+            console.log('%c✅ Tool Ready with Google Sheets Tracking!', 'color:#10b981; font-weight:600');
+        };
+    </script>
+</body>
+</html>
