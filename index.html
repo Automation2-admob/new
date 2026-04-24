@@ -98,7 +98,6 @@
     </div>
 
     <script>
-        // ==================== YOUR GOOGLE SHEETS URL ====================
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx1hSqRVV9RrYP0XG-PizvBcR3udgoMWpj-yKAcxwFRitzYMsVZSDDq9LgAAHK8G49W/exec";
 
         let selectedFiles = [];
@@ -114,22 +113,22 @@
         const statusText = document.getElementById('status-text');
         const countBadge = document.getElementById('count-badge');
 
-        // ==================== GOOGLE SHEETS FUNCTIONS ====================
+        // ==================== GOOGLE SHEETS ====================
         async function logToSheets(zipName, originalName, fileSize) {
             try {
                 await fetch(WEB_APP_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        zipName: zipName,
+                        zipName,
                         originalImage: originalName,
                         sizeKB: Math.round(fileSize / 1024),
                         dateOnly: new Date().toISOString().split('T')[0]
                     })
                 });
-                console.log("✅ Logged to Google Sheets:", zipName);
+                console.log("✅ Sent to Google Sheets:", zipName);
             } catch (e) {
-                console.error("❌ Log failed:", e);
+                console.error("❌ Failed to send to Sheets:", e);
             }
         }
 
@@ -138,23 +137,21 @@
                 const res = await fetch(WEB_APP_URL + "?t=" + Date.now());
                 const data = await res.json();
                 generationHistory = data || [];
-                
                 renderSummary();
                 renderDailyChart();
-                console.log(`Loaded ${generationHistory.length} records`);
             } catch (e) {
-                console.error("❌ Failed to load data:", e);
+                console.error("❌ Load failed:", e);
             }
         }
 
         function renderSummary() {
             document.getElementById('total-count').textContent = generationHistory.length;
-            const unique = new Set(generationHistory.map(h => h.dateOnly)).size;
-            document.getElementById('unique-days').textContent = unique;
+            const uniqueDays = new Set(generationHistory.map(h => h.dateOnly)).size;
+            document.getElementById('unique-days').textContent = uniqueDays;
 
             if (generationHistory.length > 0) {
                 const last = new Date(generationHistory[0].timestamp);
-                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
+                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
             }
         }
 
@@ -183,8 +180,10 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa', font: {size: 16}} },
-                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }} }
+                    plugins: {
+                        title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa', font: { size: 16 } }
+                    },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
                 }
             });
         }
@@ -193,11 +192,11 @@
             loadFromSheets();
         }
 
-        // ==================== FILE & ZIP FUNCTIONS (same as before) ====================
+        // ==================== FILE HANDLING ====================
         function isImageFile(file) {
             if (file.type.startsWith('image/')) return true;
             const ext = file.name.toLowerCase().split('.').pop();
-            return ['jpg','jpeg','png','gif','webp'].includes(ext);
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
         }
 
         function selectFiles(isFolder) {
@@ -207,7 +206,10 @@
         fileInput.addEventListener('change', () => handleNewFiles(fileInput.files));
         folderInput.addEventListener('change', () => handleNewFiles(folderInput.files));
 
-        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('!border-blue-500', 'bg-blue-900/10'); });
+        dropZone.addEventListener('dragover', e => {
+            e.preventDefault();
+            dropZone.classList.add('!border-blue-500', 'bg-blue-900/10');
+        });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10'));
         dropZone.addEventListener('drop', e => {
             e.preventDefault();
@@ -217,7 +219,7 @@
 
         function handleNewFiles(fileList) {
             const images = Array.from(fileList).filter(isImageFile);
-            if (images.length === 0) return alert('No valid images found');
+            if (images.length === 0) return alert('No valid image files found.');
 
             const existing = new Set(selectedFiles.map(f => f.name));
             const newFiles = images.filter(f => !existing.has(f.name));
@@ -233,15 +235,15 @@
 
             selectedFiles.forEach((file, i) => {
                 const url = URL.createObjectURL(file);
-                const card = `
+                const cardHTML = `
                 <div class="preview-card bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-700 hover:border-zinc-400 group relative">
                     <div class="aspect-square bg-black flex items-center justify-center p-3">
                         <img src="${url}" class="max-h-full max-w-full object-contain rounded-2xl">
                     </div>
-                    <div class="px-4 py-3 text-sm truncate">${file.name}</div>
-                    <button onclick="removeFile(${i});event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 w-7 h-7 rounded-2xl text-white opacity-0 group-hover:opacity-100">✕</button>
+                    <div class="px-4 py-3 text-sm font-medium truncate">${file.name}</div>
+                    <button onclick="removeFile(${i}); event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 hover:bg-red-600 w-7 h-7 rounded-2xl text-white text-sm flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
                 </div>`;
-                previewGrid.insertAdjacentHTML('beforeend', card);
+                previewGrid.insertAdjacentHTML('beforeend', cardHTML);
             });
             generateBtn.disabled = false;
         }
@@ -264,26 +266,28 @@
 
         async function createAndDownloadZIP(file) {
             const img = new Image();
-            const url = URL.createObjectURL(file);
-            await new Promise(r => { img.onload = r; img.src = url; });
+            const objectURL = URL.createObjectURL(file);
+            await new Promise(r => { img.onload = r; img.src = objectURL; });
 
-            const html = createAdHTML(file.name, img.naturalWidth, img.naturalHeight);
+            const htmlContent = createAdHTML(file.name, img.naturalWidth, img.naturalHeight);
             const zip = new JSZip();
             zip.file(file.name, file);
-            zip.file("index.html", html);
+            zip.file('index.html', htmlContent);
 
-            const blob = await zip.generateAsync({type:"blob"});
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
             const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
 
             // Log to Google Sheets
             await logToSheets(zipName, file.name, file.size);
 
             // Download
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = zipName;
-            a.click();
-            URL.revokeObjectURL(url);
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = zipName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(objectURL);
         }
 
         async function generateHTMLAds() {
@@ -296,7 +300,7 @@
                 await createAndDownloadZIP(file);
             }
 
-            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created & logged!`;
+            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created successfully!`;
             await loadFromSheets();   // Refresh shared data
 
             setTimeout(() => {
@@ -305,10 +309,10 @@
             }, 4000);
         }
 
-        // Init
+        // Initialize
         window.onload = () => {
             loadFromSheets();
-            console.log('%c✅ Tool Ready with Google Sheets Tracking!', 'color:#10b981; font-weight:600');
+            console.log('%c✅ Image to HTML Ad Tool Ready with Google Sheets!', 'color:#10b981; font-weight:600');
         };
     </script>
 </body>
