@@ -113,22 +113,29 @@
         const statusText = document.getElementById('status-text');
         const countBadge = document.getElementById('count-badge');
 
-        // ==================== GOOGLE SHEETS ====================
+        // ==================== GOOGLE SHEETS FUNCTIONS ====================
         async function logToSheets(zipName, originalName, fileSize) {
             try {
-                await fetch(WEB_APP_URL, {
+                console.log("Sending to Sheets:", zipName);
+                const response = await fetch(WEB_APP_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        zipName,
+                        zipName: zipName,
                         originalImage: originalName,
                         sizeKB: Math.round(fileSize / 1024),
                         dateOnly: new Date().toISOString().split('T')[0]
                     })
                 });
-                console.log("✅ Sent to Google Sheets:", zipName);
+
+                console.log("Response Status:", response.status);
+                if (response.ok) {
+                    console.log("✅ Successfully logged to Google Sheets");
+                } else {
+                    console.error("❌ Server returned error:", response.status);
+                }
             } catch (e) {
-                console.error("❌ Failed to send to Sheets:", e);
+                console.error("❌ Network/CORS Error:", e);
             }
         }
 
@@ -139,8 +146,9 @@
                 generationHistory = data || [];
                 renderSummary();
                 renderDailyChart();
+                console.log(`Loaded ${generationHistory.length} records from Google Sheets`);
             } catch (e) {
-                console.error("❌ Load failed:", e);
+                console.error("❌ Failed to load data from Sheets:", e);
             }
         }
 
@@ -192,7 +200,7 @@
             loadFromSheets();
         }
 
-        // ==================== FILE HANDLING ====================
+        // ==================== FILE & ZIP FUNCTIONS ====================
         function isImageFile(file) {
             if (file.type.startsWith('image/')) return true;
             const ext = file.name.toLowerCase().split('.').pop();
@@ -206,10 +214,7 @@
         fileInput.addEventListener('change', () => handleNewFiles(fileInput.files));
         folderInput.addEventListener('change', () => handleNewFiles(folderInput.files));
 
-        dropZone.addEventListener('dragover', e => {
-            e.preventDefault();
-            dropZone.classList.add('!border-blue-500', 'bg-blue-900/10');
-        });
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('!border-blue-500', 'bg-blue-900/10'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10'));
         dropZone.addEventListener('drop', e => {
             e.preventDefault();
@@ -277,10 +282,8 @@
             const zipBlob = await zip.generateAsync({ type: 'blob' });
             const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
 
-            // Log to Google Sheets
             await logToSheets(zipName, file.name, file.size);
 
-            // Download
             const link = document.createElement('a');
             link.href = URL.createObjectURL(zipBlob);
             link.download = zipName;
@@ -300,8 +303,8 @@
                 await createAndDownloadZIP(file);
             }
 
-            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created successfully!`;
-            await loadFromSheets();   // Refresh shared data
+            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created! Check Google Sheet.`;
+            await loadFromSheets();
 
             setTimeout(() => {
                 statusText.textContent = '';
@@ -309,10 +312,9 @@
             }, 4000);
         }
 
-        // Initialize
         window.onload = () => {
             loadFromSheets();
-            console.log('%c✅ Image to HTML Ad Tool Ready with Google Sheets!', 'color:#10b981; font-weight:600');
+            console.log('%c✅ Tool Ready - Check Console (F12) for logs', 'color:#10b981; font-weight:600');
         };
     </script>
 </body>
