@@ -98,10 +98,11 @@
     </div>
 
     <script>
-        // ==================== GITHUB CONFIG ====================
+        // ==================== UPDATE THESE THREE LINES ====================
         const GITHUB_OWNER = "Automation2-admob";           // ← Change this
         const GITHUB_REPO  = "new";          // ← Change this
-        const GITHUB_TOKEN = "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"; 
+        const GITHUB_TOKEN = "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";
+
         const FILE_PATH = "zip-history.json";
 
         let selectedFiles = [];
@@ -120,9 +121,10 @@
 
         // ==================== GITHUB FUNCTIONS ====================
         async function getCurrentHistory() {
-            const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
             try {
-                const res = await fetch(url, { headers: { Authorization: `token ${GITHUB_TOKEN}` } });
+                const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`, {
+                    headers: { Authorization: `token ${GITHUB_TOKEN}` }
+                });
                 if (res.status === 404) return { history: [], sha: null };
                 const data = await res.json();
                 const content = JSON.parse(atob(data.content));
@@ -134,24 +136,37 @@
         }
 
         async function logToGitHub(zipName, originalName, fileSize) {
-            const entry = {
-                zipName, originalImage: originalName,
-                sizeKB: Math.round(fileSize / 1024),
-                date: new Date().toISOString(),
-                dateOnly: new Date().toISOString().split('T')[0]
-            };
+            try {
+                const entry = {
+                    zipName,
+                    originalImage: originalName,
+                    sizeKB: Math.round(fileSize / 1024),
+                    date: new Date().toISOString(),
+                    dateOnly: new Date().toISOString().split('T')[0]
+                };
 
-            const { history, sha } = await getCurrentHistory();
-            history.unshift(entry);
-            if (history.length > 500) history.pop();
+                const { history, sha } = await getCurrentHistory();
+                history.unshift(entry);
+                if (history.length > 500) history.pop();
 
-            const newContent = btoa(JSON.stringify({ history }, null, 2));
+                const newContent = btoa(JSON.stringify({ history }, null, 2));
 
-            await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`, {
-                method: "PUT",
-                headers: { Authorization: `token ${GITHUB_TOKEN}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ message: `Add ZIP: ${zipName}`, content: newContent, sha: sha })
-            });
+                await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`, {
+                    method: "PUT",
+                    headers: {
+                        Authorization: `token ${GITHUB_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        message: `Add ZIP: ${zipName}`,
+                        content: newContent,
+                        sha: sha
+                    })
+                });
+                console.log("✅ Saved to GitHub:", zipName);
+            } catch (e) {
+                console.error("❌ GitHub Save Error:", e);
+            }
         }
 
         async function loadFromGitHub() {
@@ -163,34 +178,51 @@
 
         function renderSummary() {
             document.getElementById('total-count').textContent = generationHistory.length;
-            document.getElementById('unique-days').textContent = new Set(generationHistory.map(h => h.dateOnly)).size;
+            const uniqueDays = new Set(generationHistory.map(h => h.dateOnly)).size;
+            document.getElementById('unique-days').textContent = uniqueDays;
+
             if (generationHistory.length > 0) {
                 const last = new Date(generationHistory[0].date);
-                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
+                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
             }
         }
 
         function renderDailyChart() {
             const counts = {};
-            generationHistory.forEach(item => counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1);
+            generationHistory.forEach(item => {
+                counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1;
+            });
             const sortedDates = Object.keys(counts).sort().reverse();
             const dataPoints = sortedDates.map(d => counts[d]);
 
             if (dailyChart) dailyChart.destroy();
+
             dailyChart = new Chart(document.getElementById('dailyChart'), {
                 type: 'bar',
-                data: { labels: sortedDates, datasets: [{ label: 'ZIPs Created', data: dataPoints, backgroundColor: '#10b981', borderRadius: 6 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa' } } }
+                data: {
+                    labels: sortedDates,
+                    datasets: [{
+                        label: 'ZIP Files Created',
+                        data: dataPoints,
+                        backgroundColor: '#10b981',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa' } }
+                }
             });
         }
 
         function refreshData() { loadFromGitHub(); }
 
-        // ==================== FILE HANDLING ====================
+        // ==================== FILE & ZIP FUNCTIONS ====================
         function isImageFile(file) {
             if (file.type.startsWith('image/')) return true;
             const ext = file.name.toLowerCase().split('.').pop();
-            return ['jpg','jpeg','png','gif','webp'].includes(ext);
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
         }
 
         function selectFiles(isFolder) {
@@ -216,15 +248,15 @@
 
             selectedFiles.forEach((file, i) => {
                 const url = URL.createObjectURL(file);
-                const card = `
+                const cardHTML = `
                 <div class="preview-card bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-700 hover:border-zinc-400 group relative">
                     <div class="aspect-square bg-black flex items-center justify-center p-3">
                         <img src="${url}" class="max-h-full max-w-full object-contain rounded-2xl">
                     </div>
-                    <div class="px-4 py-3 text-sm truncate">${file.name}</div>
-                    <button onclick="removeFile(${i});event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 w-7 h-7 rounded-2xl text-white opacity-0 group-hover:opacity-100">✕</button>
+                    <div class="px-4 py-3 text-sm font-medium truncate">${file.name}</div>
+                    <button onclick="removeFile(${i}); event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 hover:bg-red-600 w-7 h-7 rounded-2xl text-white text-sm flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
                 </div>`;
-                previewGrid.insertAdjacentHTML('beforeend', card);
+                previewGrid.insertAdjacentHTML('beforeend', cardHTML);
             });
             generateBtn.disabled = false;
         }
@@ -252,15 +284,15 @@
             zip.file(file.name, file);
             zip.file("index.html", htmlContent);
 
-            const zipBlob = await zip.generateAsync({type:"blob"});
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
             const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
 
             await logToGitHub(zipName, file.name, file.size);
 
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(zipBlob);
-            a.download = zipName;
-            a.click();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = zipName;
+            link.click();
             URL.revokeObjectURL(objectURL);
         }
 
@@ -270,11 +302,11 @@
             generateBtn.disabled = true;
 
             for (let file of selectedFiles) {
-                statusText.textContent = `Creating ZIP for ${file.name}`;
+                statusText.textContent = `📦 Creating ZIP for ${file.name}`;
                 await createAndDownloadZIP(file);
             }
 
-            statusText.innerHTML = `✅ All ZIPs created and saved!`;
+            statusText.innerHTML = `✅ All ${selectedFiles.length} ZIPs created and saved to GitHub!`;
             await loadFromGitHub();
 
             setTimeout(() => {
@@ -297,7 +329,7 @@
 
         window.onload = () => {
             loadFromGitHub();
-            console.log('%c✅ Tool Ready with GitHub Tracking!', 'color:#10b981; font-weight:600');
+            console.log('%c✅ Tool Ready with GitHub JSON Tracking!', 'color:#10b981; font-weight:600');
         };
     </script>
 </body>
