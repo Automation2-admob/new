@@ -72,7 +72,7 @@
         <!-- Dashboard -->
         <div class="mt-20">
             <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-semibold">📊 Shared Generation Activity (GitHub JSON)</h2>
+                <h2 class="text-2xl font-semibold">📊 Shared Generation Activity (GitHub)</h2>
                 <button onclick="refreshData()" class="text-blue-400 hover:text-blue-300 text-sm">🔄 Refresh</button>
             </div>
 
@@ -101,62 +101,57 @@
         // ==================== GITHUB CONFIG ====================
         const GITHUB_OWNER = "Automation2-admob";           // ← Change this
         const GITHUB_REPO  = "new";          // ← Change this
-        const GITHUB_TOKEN = "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"; // ← Paste your token here
-        const FILE_PATH    = "zip-history.json";
+        const GITHUB_TOKEN = "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"; 
+        const FILE_PATH = "zip-history.json";
 
         let selectedFiles = [];
         let generationHistory = [];
         let dailyChart = null;
 
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const folderInput = document.getElementById('folder-input');
+        const previewSection = document.getElementById('preview-section');
+        const previewGrid = document.getElementById('preview-grid');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusText = document.getElementById('status-text');
+        const countBadge = document.getElementById('count-badge');
+
         // ==================== GITHUB FUNCTIONS ====================
         async function getCurrentHistory() {
             const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
             try {
-                const res = await fetch(url, {
-                    headers: { Authorization: `token ${GITHUB_TOKEN}` }
-                });
+                const res = await fetch(url, { headers: { Authorization: `token ${GITHUB_TOKEN}` } });
                 if (res.status === 404) return { history: [], sha: null };
                 const data = await res.json();
                 const content = JSON.parse(atob(data.content));
                 return { history: content.history || [], sha: data.sha };
             } catch (e) {
-                console.error("GitHub GET error", e);
+                console.error(e);
                 return { history: [], sha: null };
             }
         }
 
-        async function updateHistory(newEntry) {
-            const { history, sha } = await getCurrentHistory();
-            history.unshift(newEntry);
-            if (history.length > 500) history.pop();
-
-            const newContent = btoa(JSON.stringify({ history }, null, 2));
-
-            const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`;
-            await fetch(url, {
-                method: "PUT",
-                headers: {
-                    Authorization: `token ${GITHUB_TOKEN}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    message: `Add ZIP: ${newEntry.zipName}`,
-                    content: newContent,
-                    sha: sha
-                })
-            });
-        }
-
         async function logToGitHub(zipName, originalName, fileSize) {
             const entry = {
-                zipName,
-                originalImage: originalName,
+                zipName, originalImage: originalName,
                 sizeKB: Math.round(fileSize / 1024),
                 date: new Date().toISOString(),
                 dateOnly: new Date().toISOString().split('T')[0]
             };
-            await updateHistory(entry);
-            console.log("✅ Saved to GitHub:", zipName);
+
+            const { history, sha } = await getCurrentHistory();
+            history.unshift(entry);
+            if (history.length > 500) history.pop();
+
+            const newContent = btoa(JSON.stringify({ history }, null, 2));
+
+            await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_PATH}`, {
+                method: "PUT",
+                headers: { Authorization: `token ${GITHUB_TOKEN}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ message: `Add ZIP: ${zipName}`, content: newContent, sha: sha })
+            });
         }
 
         async function loadFromGitHub() {
@@ -168,47 +163,84 @@
 
         function renderSummary() {
             document.getElementById('total-count').textContent = generationHistory.length;
-            const uniqueDays = new Set(generationHistory.map(h => h.dateOnly)).size;
-            document.getElementById('unique-days').textContent = uniqueDays;
-
+            document.getElementById('unique-days').textContent = new Set(generationHistory.map(h => h.dateOnly)).size;
             if (generationHistory.length > 0) {
                 const last = new Date(generationHistory[0].date);
-                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                document.getElementById('last-date').textContent = last.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'});
             }
         }
 
         function renderDailyChart() {
             const counts = {};
-            generationHistory.forEach(item => {
-                counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1;
-            });
+            generationHistory.forEach(item => counts[item.dateOnly] = (counts[item.dateOnly] || 0) + 1);
             const sortedDates = Object.keys(counts).sort().reverse();
             const dataPoints = sortedDates.map(d => counts[d]);
 
             if (dailyChart) dailyChart.destroy();
-
             dailyChart = new Chart(document.getElementById('dailyChart'), {
                 type: 'bar',
-                data: {
-                    labels: sortedDates,
-                    datasets: [{
-                        label: 'ZIP Files Created',
-                        data: dataPoints,
-                        backgroundColor: '#10b981',
-                        borderRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa' }}
-                }
+                data: { labels: sortedDates, datasets: [{ label: 'ZIPs Created', data: dataPoints, backgroundColor: '#10b981', borderRadius: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Daily ZIP Creation Activity', color: '#a1a1aa' } } }
             });
         }
 
         function refreshData() { loadFromGitHub(); }
 
-        // ==================== ZIP CREATION (unchanged except logging) ====================
+        // ==================== FILE HANDLING ====================
+        function isImageFile(file) {
+            if (file.type.startsWith('image/')) return true;
+            const ext = file.name.toLowerCase().split('.').pop();
+            return ['jpg','jpeg','png','gif','webp'].includes(ext);
+        }
+
+        function selectFiles(isFolder) {
+            if (isFolder) folderInput.click();
+            else fileInput.click();
+        }
+
+        function handleNewFiles(fileList) {
+            const images = Array.from(fileList).filter(isImageFile);
+            if (images.length === 0) return alert('No valid image files found.');
+
+            const existing = new Set(selectedFiles.map(f => f.name));
+            const newFiles = images.filter(f => !existing.has(f.name));
+
+            selectedFiles = [...selectedFiles, ...newFiles];
+            renderPreview();
+        }
+
+        function renderPreview() {
+            previewSection.classList.remove('hidden');
+            previewGrid.innerHTML = '';
+            countBadge.textContent = `${selectedFiles.length} image${selectedFiles.length !== 1 ? 's' : ''}`;
+
+            selectedFiles.forEach((file, i) => {
+                const url = URL.createObjectURL(file);
+                const card = `
+                <div class="preview-card bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-700 hover:border-zinc-400 group relative">
+                    <div class="aspect-square bg-black flex items-center justify-center p-3">
+                        <img src="${url}" class="max-h-full max-w-full object-contain rounded-2xl">
+                    </div>
+                    <div class="px-4 py-3 text-sm truncate">${file.name}</div>
+                    <button onclick="removeFile(${i});event.stopImmediatePropagation()" class="absolute top-3 right-3 bg-red-500 w-7 h-7 rounded-2xl text-white opacity-0 group-hover:opacity-100">✕</button>
+                </div>`;
+                previewGrid.insertAdjacentHTML('beforeend', card);
+            });
+            generateBtn.disabled = false;
+        }
+
+        function removeFile(i) {
+            selectedFiles.splice(i, 1);
+            renderPreview();
+            if (selectedFiles.length === 0) previewSection.classList.add('hidden');
+        }
+
+        function clearAllFiles() {
+            selectedFiles = [];
+            previewSection.classList.add('hidden');
+            generateBtn.disabled = true;
+        }
+
         async function createAndDownloadZIP(file) {
             const img = new Image();
             const objectURL = URL.createObjectURL(file);
@@ -218,19 +250,17 @@
 
             const zip = new JSZip();
             zip.file(file.name, file);
-            zip.file('index.html', htmlContent);
+            zip.file("index.html", htmlContent);
 
-            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const zipBlob = await zip.generateAsync({type:"blob"});
             const zipName = file.name.replace(/\.[^.]+$/, '') + '-google-ad.zip';
 
-            // Save to GitHub
             await logToGitHub(zipName, file.name, file.size);
 
-            // Download
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(zipBlob);
-            link.download = zipName;
-            link.click();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = zipName;
+            a.click();
             URL.revokeObjectURL(objectURL);
         }
 
@@ -240,11 +270,11 @@
             generateBtn.disabled = true;
 
             for (let file of selectedFiles) {
-                statusText.textContent = `📦 Creating ${file.name}`;
+                statusText.textContent = `Creating ZIP for ${file.name}`;
                 await createAndDownloadZIP(file);
             }
 
-            statusText.innerHTML = `✅ All ZIPs created and saved to GitHub!`;
+            statusText.innerHTML = `✅ All ZIPs created and saved!`;
             await loadFromGitHub();
 
             setTimeout(() => {
@@ -253,12 +283,21 @@
             }, 4000);
         }
 
-        // Rest of your file handling functions (same as before)
-        // ... (selectFiles, handleNewFiles, renderPreview, etc.) ...
+        // Event Listeners
+        fileInput.addEventListener('change', () => handleNewFiles(fileInput.files));
+        folderInput.addEventListener('change', () => handleNewFiles(folderInput.files));
+
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('!border-blue-500', 'bg-blue-900/10'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('!border-blue-500', 'bg-blue-900/10');
+            handleNewFiles(e.dataTransfer.files);
+        });
 
         window.onload = () => {
             loadFromGitHub();
-            console.log('%c✅ GitHub JSON Tracking Active!', 'color:#10b981; font-weight:600');
+            console.log('%c✅ Tool Ready with GitHub Tracking!', 'color:#10b981; font-weight:600');
         };
     </script>
 </body>
